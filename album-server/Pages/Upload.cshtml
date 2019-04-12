@@ -1,0 +1,69 @@
+﻿@page
+@model album_server.Pages.UploadModel
+@{
+    ViewData["Title"] = "Upload";
+}
+
+
+@if (Model.Request.HasFormContentType)
+{
+    Layout = null;
+    <h2>Upload Result</h2>
+    <p>
+        Device ID: @Model.DeviceId
+    </p>
+    <p>
+        Count of pictures: @Model.Pictures.Count
+    </p>
+    <p>
+        Pictures:
+        @foreach (var pic in Model.Pictures)
+        {
+            <br /> @($"[{pic.Length / 1024 / 1024:F1}M] {pic.FileName}")
+        }
+    </p>
+}
+else
+{
+    <script>
+        function uploadFile() {
+            var xhr = new XMLHttpRequest();
+            var formData = new FormData();
+
+            var deviceId = document.getElementById("DeviceId");
+            formData.append(deviceId.name, deviceId.value);
+
+            var files = document.getElementById("Pictures").files;
+
+            for (var i = 0; i < files.length; i++) {
+                var file = files[i];
+                formData.append('Pictures', file);
+            }
+
+            xhr.open("POST", "/Upload");
+
+            xhr.onload = function () {
+                if (this.status === 200) {
+                    document.getElementById("Result").innerHTML = this.responseText;
+                }
+            };
+
+            xhr.upload.onprogress = function (event) {
+                if (event.lengthComputable) {
+                    var progress = (event.loaded / event.total);
+                    document.getElementById("progress").value = progress;
+                }
+            };
+
+            xhr.send(formData);
+        }
+    </script>
+    <h2>Upload Test Page</h2>
+    <div>
+        <input type="text" id="DeviceId" value="@Model.DeviceId" />
+        <input type="file" id="Pictures" name="Pictures" multiple />
+        <input type="button" value="Submit" onclick="uploadFile()" />
+    </div>
+    <progress id="progress" value="0"></progress>
+    <div id="Result"></div>
+}
