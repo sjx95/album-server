@@ -16,13 +16,23 @@
         Append Mode: @Model.AppendMode
     </p>
     <p>
-        Count of pictures: @Model.Pictures.Count
+        Count of uploads: @Model.Pictures.Count
     </p>
+    if (Model.ConflictSet.Count != 0)
+    {
+        <p>
+            Conflicts: @Model.ConflictSet.Count
+            @foreach (var fn in Model.ConflictSet)
+            {
+                <br/> @fn
+            }
+        </p>
+    }
     <p>
-        Pictures:
-        @foreach (var pic in Model.Pictures)
+        Pictures: @Model.FileSet.Count
+        @foreach (var fn in Model.FileSet)
         {
-            <br /> @($"[{pic.Length / 1024 / 1024:F1}M] {pic.FileName}")
+            <br /> @fn
         }
     </p>
 }
