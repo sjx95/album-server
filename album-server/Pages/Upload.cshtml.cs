@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Internal;
@@ -14,5 +15,22 @@ namespace album_server.Pages
     {
         [BindProperty(SupportsGet = true)] public UInt64 DeviceId { get; set; } 
         [BindProperty] public FormFileCollection Pictures { get; set; }
+
+        public IActionResult OnPost()
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest();
+            }
+
+            foreach (var pic in Pictures)
+            {
+                var file = System.IO.File.OpenWrite($"~/data/{pic.FileName}");
+                pic.CopyTo(file);
+                file.Close();
+            }
+
+            return Page();
+        }
     }
 }
