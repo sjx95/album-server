@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Internal;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -15,6 +17,7 @@ namespace album_server.Pages
     {
         [BindProperty(SupportsGet = true)] public UInt64 DeviceId { get; set; } 
         [BindProperty] public FormFileCollection Pictures { get; set; }
+        [BindProperty] public bool AppendMode { get; set; }
 
         public IActionResult OnPost()
         {
@@ -25,12 +28,24 @@ namespace album_server.Pages
 
             foreach (var pic in Pictures)
             {
-                var file = System.IO.File.OpenWrite($"~/data/{pic.FileName}");
+                var path = $"{hostEnv.WebRootPath}/userdata/{DeviceId}/{pic.FileName}";
+                FileInfo fileInfo = new FileInfo(path);
+                var di = fileInfo.Directory;
+                if (!di.Exists)
+                    di.Create();
+                FileStream file = System.IO.File.OpenWrite(path);
                 pic.CopyTo(file);
                 file.Close();
             }
 
             return Page();
+        }
+
+        private readonly IHostingEnvironment hostEnv;
+
+        public UploadModel(IHostingEnvironment _hostEnv)
+        {
+            hostEnv = _hostEnv;
         }
     }
 }

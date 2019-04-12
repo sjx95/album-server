@@ -13,6 +13,9 @@
         Device ID: @Model.DeviceId
     </p>
     <p>
+        Append Mode: @Model.AppendMode
+    </p>
+    <p>
         Count of pictures: @Model.Pictures.Count
     </p>
     <p>
@@ -33,11 +36,12 @@ else
             var deviceId = document.getElementById("DeviceId");
             formData.append(deviceId.name, deviceId.value);
 
-            var files = document.getElementById("Pictures").files;
+            var appendMode = document.getElementById("AppendMode");
+            formData.append(appendMode.name, appendMode.checked);
 
-            for (var i = 0; i < files.length; i++) {
-                var file = files[i];
-                formData.append('Pictures', file);
+            var pictures = document.getElementById("Pictures");
+            for (const file of pictures.files) {
+                formData.append(pictures.name, file);
             }
 
             xhr.open("POST", "/Upload");
@@ -60,11 +64,12 @@ else
     </script>
 
     <h2>Upload Test Page</h2>
-    <div>
-        <input type="text" id="DeviceId" value="@Model.DeviceId" />
+    <form>
+        <input type="text" id="DeviceId" name="DeviceId" value="@Model.DeviceId" />
         <input type="file" id="Pictures" name="Pictures" multiple />
+        <input type="checkbox" id="AppendMode" name="AppendMode" checked /> Append Mode <br />
         <input type="button" value="Submit" onclick="uploadFile()" />
-    </div>
+    </form>
     <progress id="progress" value="0"></progress>
     <div id="Result"></div>
 }
