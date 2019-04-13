@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
@@ -23,71 +24,87 @@ namespace album_server.Pages
         public HashSet<string> FileSet = new HashSet<string>();
         public HashSet<string> ConflictSet = new HashSet<string>();
 
-        public IActionResult OnPost()
+        private static ConcurrentDictionary<UInt64, DateTime> locks = new ConcurrentDictionary<UInt64, DateTime>();
+        
+        public async Task<IActionResult> OnPostAsync()
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest();
             }
-
-            if (AppendMode && System.IO.File.Exists($"{hostEnv.WebRootPath}/userdata/{DeviceId}.txt"))
+            
+            if (!locks.TryAdd(DeviceId, DateTime.Now))
             {
-                foreach (var fn in System.IO.File.ReadLines($"{hostEnv.WebRootPath}/userdata/{DeviceId}.txt"))
-                {
-                    FileSet.Add(fn);
-                }
+                return BadRequest("Last request is in processing.");
             }
 
-            foreach (var pic in Pictures)
+            try
             {
-                if (FileSet.Contains(pic.FileName))
+                // Read exist file list
+                if (AppendMode && System.IO.File.Exists($"{hostEnv.WebRootPath}/userdata/{DeviceId}.txt"))
                 {
-                    var oldFile = System.IO.File.OpenRead($"{hostEnv.WebRootPath}/userdata/{DeviceId}/{pic.FileName}");
-
-                    bool conflict = false;
-                    if (pic.Length == oldFile.Length)
+                    foreach (var fn in System.IO.File.ReadLines($"{hostEnv.WebRootPath}/userdata/{DeviceId}.txt"))
                     {
-                        var newFile = pic.OpenReadStream();
-                        for (long i = 0; i < pic.Length; ++i)
+                        FileSet.Add(fn);
+                    }
+                }
+
+                foreach (var pic in Pictures)
+                {
+                    if (FileSet.Contains(pic.FileName))
+                    {
+                        using (var hasher = SHA1.Create())
                         {
-                            if (newFile.ReadByte() != oldFile.ReadByte())
+                            var oldContent = await System.IO.File.ReadAllBytesAsync($"{hostEnv.WebRootPath}/userdata/{DeviceId}/{pic.FileName}");
+                            var oldHash = hasher.ComputeHash(oldContent);
+
+                            using (Stream newFile = pic.OpenReadStream())
                             {
-                                conflict = true;
-                                break;
+                                var newHash = hasher.ComputeHash(newFile);
+                                if (BitConverter.ToString(oldHash) != BitConverter.ToString(newHash))
+                                {
+                                    ConflictSet.Add(pic.FileName);
+                                }
                             }
                         }
-                        newFile.Close();
-                    }
-                    else
-                    {
-                        conflict = true;
+                        continue;
                     }
 
-                    oldFile.Close();
+                    FileStream picFs = CreateAndOpenWrite($"{hostEnv.WebRootPath}/userdata/{DeviceId}/{pic.FileName}");
+                    pic.CopyTo(picFs);
+                    picFs.Close();
 
-                    if (conflict)
-                    {
-                        ConflictSet.Add(pic.FileName);
-                    }
-
-                    continue;
+                    FileSet.Add(pic.FileName);
                 }
 
-                FileStream picFs = CreateAndOpenWrite($"{hostEnv.WebRootPath}/userdata/{DeviceId}/{pic.FileName}");
-                pic.CopyTo(picFs);
-                picFs.Close();
+                var fsw = new StreamWriter(CreateAndOpenWrite($"{hostEnv.WebRootPath}/userdata/{DeviceId}.txt"));
+                foreach (var fn in FileSet)
+                {
+                    fsw.WriteLine(fn);
+                }
+                fsw.Close();
 
-                FileSet.Add(pic.FileName);
+                if (Directory.Exists($"{hostEnv.WebRootPath}/userdata/{DeviceId}"))
+                {
+                    var dir = new DirectoryInfo($"{hostEnv.WebRootPath}/userdata/{DeviceId}");
+                    var files = dir.GetFiles();
+                    foreach (var f in files)
+                    {
+                        
+                        if (!FileSet.Contains(f.Name))
+                        {
+                            f.Delete();
+                        }
+                    }
+                }
+                
+
+                return Page();
             }
-
-            var fsw = new StreamWriter(CreateAndOpenWrite($"{hostEnv.WebRootPath}/userdata/{DeviceId}.txt"));
-            foreach (var fn in FileSet)
+            finally
             {
-                fsw.WriteLine(fn);
+                locks.TryRemove(DeviceId, out _);
             }
-            fsw.Close();
-
-            return Page();
         }
 
         private FileStream CreateAndOpenWrite(string path)
@@ -96,7 +113,10 @@ namespace album_server.Pages
             var di = fileInfo.Directory;
             if (!di.Exists)
                 di.Create();
-            return System.IO.File.OpenWrite(path);
+            var fs = System.IO.File.OpenWrite(path);
+            fs.SetLength(0);
+            fs.Flush();
+            return fs;
         }
 
         private readonly IHostingEnvironment hostEnv;
