@@ -71,7 +71,7 @@ namespace album_server.Pages
                     }
 
                     FileStream picFs = CreateAndOpenWrite($"{hostEnv.WebRootPath}/userdata/{DeviceId}/{pic.FileName}");
-                    pic.CopyTo(picFs);
+                    await pic.CopyToAsync(picFs);
                     picFs.Close();
 
                     FileSet.Add(pic.FileName);
@@ -80,7 +80,7 @@ namespace album_server.Pages
                 var fsw = new StreamWriter(CreateAndOpenWrite($"{hostEnv.WebRootPath}/userdata/{DeviceId}.txt"));
                 foreach (var fn in FileSet)
                 {
-                    fsw.WriteLine(fn);
+                    await fsw.WriteLineAsync(fn);
                 }
                 fsw.Close();
 
