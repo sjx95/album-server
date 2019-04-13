@@ -59,7 +59,10 @@ else
             xhr.onload = function () {
                 if (this.status === 200) {
                     document.getElementById("Result").innerHTML = this.responseText;
+                } else {
+                    document.getElementById("Result").innerHTML = this.responseText;
                 }
+                document.getElementById("UploadBtn").disabled = false;
             };
 
             xhr.upload.onprogress = function (event) {
@@ -70,6 +73,7 @@ else
             };
 
             xhr.send(formData);
+            document.getElementById("UploadBtn").disabled = true;
         }
     </script>
 
@@ -78,7 +82,7 @@ else
         <input type="text" id="DeviceId" name="DeviceId" value="@Model.DeviceId" />
         <input type="file" id="Pictures" name="Pictures" multiple />
         <input type="checkbox" id="AppendMode" name="AppendMode" checked /> Append Mode <br />
-        <input type="button" value="Submit" onclick="uploadFile()" />
+        <input type="button" id="UploadBtn" value="Upload" onclick="uploadFile()" />
     </form>
     <progress id="progress" value="0"></progress>
     <div id="Result"></div>
