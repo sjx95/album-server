@@ -5,14 +5,10 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
-using Microsoft.Extensions.Options;
 
 namespace album_client
 {
@@ -23,7 +19,7 @@ namespace album_client
         public static readonly FileInfo AssemblyFileInfo = new FileInfo(Assembly.GetExecutingAssembly().FullName);
         public static readonly DirectoryInfo UsersDirectoryInfo = AssemblyFileInfo.Directory?.CreateSubdirectory("userdatas");
         public static readonly UInt64 DeviceId;
-        public static readonly ILoggerFactory LogFactory = new LoggerFactory().AddConsole();
+        private static readonly ILogger logger = new LoggerFactory().AddConsole().CreateLogger(typeof(Program).FullName);
 
         static Program()
         {
@@ -36,8 +32,10 @@ namespace album_client
             {
                 var networkInterface = NetworkInterface.GetAllNetworkInterfaces()
                     .FirstOrDefault(i =>
-                        i.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 &&
-                        i.OperationalStatus == OperationalStatus.Up);
+                        i.OperationalStatus == OperationalStatus.Up && 
+                        i.NetworkInterfaceType != NetworkInterfaceType.Loopback);
+
+                logger.LogDebug($"IF Name: {networkInterface.Name}");
                 DeviceId = UInt64.Parse(networkInterface?.GetPhysicalAddress().ToString(), NumberStyles.HexNumber);
 
                 var configFile = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
@@ -53,7 +51,6 @@ namespace album_client
             Debug.Assert(UsersDirectoryInfo.Exists);
             Debug.Assert(DeviceId != 0);
 
-            var logger = LogFactory.CreateLogger("Main");
             logger.LogInformation($"Device ID: {DeviceId}");
             logger.LogInformation($"Your uploading page: {ServerUrl}/Upload?DeviceId={DeviceId}");
 
