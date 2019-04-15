@@ -1,6 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Collections.Concurrent;
+
 using System.Configuration;
 using System.Diagnostics;
 using System.Globalization;
@@ -13,6 +12,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using System.Runtime.InteropServices;
 
 namespace album_client
 {
@@ -23,7 +23,8 @@ namespace album_client
         public static readonly FileInfo AssemblyFileInfo = new FileInfo(Assembly.GetExecutingAssembly().FullName);
         public static readonly DirectoryInfo UsersDirectoryInfo = AssemblyFileInfo.Directory?.CreateSubdirectory("userdatas");
         public static readonly UInt64 DeviceId;
-        private static readonly ILogger logger = new LoggerFactory().AddConsole().CreateLogger(typeof(Program).FullName);
+        public static readonly bool UseXinitInLinux = bool.Parse(ConfigurationManager.AppSettings["UseXinitInLinux"]);
+        private static readonly ILogger Logger = new LoggerFactory().AddConsole().CreateLogger(typeof(Program).FullName);
 
         static Program()
         {
@@ -39,7 +40,7 @@ namespace album_client
                         i.OperationalStatus == OperationalStatus.Up && 
                         i.NetworkInterfaceType != NetworkInterfaceType.Loopback);
 
-                logger.LogDebug($"IF Name: {networkInterface.Name}");
+                Logger.LogDebug($"IF Name: {networkInterface.Name}");
                 DeviceId = UInt64.Parse(networkInterface?.GetPhysicalAddress().ToString(), NumberStyles.HexNumber);
 
                 var configFile = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
@@ -65,12 +66,12 @@ namespace album_client
                 {
                     return false;
                 }
-            } catch (FileNotFoundException e)
+            } catch (FileNotFoundException)
             {
-                logger.LogWarning($"Local list not found.");
+                Logger.LogWarning($"Local list not found.");
             }
 
-            logger.LogInformation($"New list: \n{content}");
+            Logger.LogInformation($"New list: \n{content}");
             await File.WriteAllTextAsync($"{UsersDirectoryInfo.FullName}/list.txt", content);
             
             return true;
@@ -88,17 +89,17 @@ namespace album_client
                 var url = $"{ServerUrl}/userdata/{DeviceId}/{fn}";
                 var request = FileWebRequest.Create(url);
 
-                logger.LogInformation($"Downloading: {url}");
+                Logger.LogInformation($"Downloading: {url}");
                 var response = await request.GetResponseAsync();
-                var content = new StreamReader(response.GetResponseStream()).ReadToEnd();
+                var responseStream = response.GetResponseStream();
 
                 var path = $"{UsersDirectoryInfo.FullName}/{fn}";
-                var fs = new StreamWriter(fn);
-                fs.Write(content);
+                var fs = new FileStream(path, FileMode.Create);
+                await responseStream.CopyToAsync(fs);
                 fs.Close();
             }
 
-            logger.LogInformation($"{files.Count} file(s) downloaded.");
+            Logger.LogInformation($"{files.Count} file(s) downloaded.");
         }
 
         static async Task Main(string[] args)
@@ -106,9 +107,40 @@ namespace album_client
             Debug.Assert(UsersDirectoryInfo.Exists);
             Debug.Assert(DeviceId != 0);
 
-            logger.LogInformation($"Device ID: {DeviceId}");
-            logger.LogInformation($"Your uploading page: {ServerUrl}/Upload?DeviceId={DeviceId}");
+            Logger.LogInformation($"Device ID: {DeviceId}");
+            Logger.LogInformation($"Your uploading page: {ServerUrl}/Upload?DeviceId={DeviceId}");
 
+            var startInfo = new ProcessStartInfo {WorkingDirectory = $"{UsersDirectoryInfo.FullName}", };
+            var mpvArgs = $"--playlist=list.txt " +
+                       $"--image-display-duration={ResidenceTime} " +
+                       $"--fs ";
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && UseXinitInLinux)
+            {
+                mpvArgs += "--loop " + // TODO Check mpv version
+                           "--geometry=100%x100% ";
+                var findMpv = new Process { StartInfo = new ProcessStartInfo("which", "mpv") { RedirectStandardOutput = true, UseShellExecute = false } };
+                findMpv.Start();
+                findMpv.WaitForExit();
+                var mpvPath = findMpv.StandardOutput.ReadLine();
+                if (string.IsNullOrWhiteSpace(mpvPath))
+                {
+                    Logger.LogError("mpv not found in system, install it by \"apt install mpv\" (Debian).");
+                    throw new FileNotFoundException("mpv not found in system.");
+                }
+                startInfo.FileName = "xinit";
+                startInfo.Arguments = $"{mpvPath} {mpvArgs}";
+            }
+            else
+            {
+                mpvArgs += "--loop-playlist ";
+                startInfo.FileName = "mpv";
+                startInfo.Arguments = mpvArgs;
+            }
+            var projector = new Process {StartInfo = startInfo};
+            AppDomain.CurrentDomain.ProcessExit += (sender, eventArgs) => projector.Kill();
+            Console.CancelKeyPress += (sender, eventArgs) => projector.Kill();
+            projector.Start();
 
             while (true)
             {
@@ -116,16 +148,22 @@ namespace album_client
                 {
                     if (await UpdateListAsync())
                     {
-                        logger.LogInformation("Start album reloading due to list updated.");
+                        if (!projector.HasExited)
+                        {
+                            projector.Kill();
+                        }
+                        projector.Close();
+
+                        Logger.LogInformation("Start album reloading due to list updated.");
                         await UpdateAlbumAsync();
+
+                        projector.Start();
                     }
-
-                    await Task.Delay(2000);
-
                 } catch (WebException e)
                 {
-                    logger.LogWarning(e.ToString());
+                    Logger.LogWarning(e.ToString());
                 }
+                await Task.Delay(2000);
             }
         }
     }
