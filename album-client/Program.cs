@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Configuration;
 using System.Diagnostics;
 using System.Globalization;
@@ -58,7 +60,7 @@ namespace album_client
             {
                 var hasher = SHA1.Create();
                 var newHash = hasher.ComputeHash(Encoding.Default.GetBytes(content));
-                var oldHash = hasher.ComputeHash(File.OpenRead($"{UsersDirectoryInfo.FullName}/list.txt"));
+                var oldHash = hasher.ComputeHash(File.ReadAllBytes($"{UsersDirectoryInfo.FullName}/list.txt"));
                 if (BitConverter.ToString(oldHash) == BitConverter.ToString(newHash))
                 {
                     return false;
@@ -69,9 +71,34 @@ namespace album_client
             }
 
             logger.LogInformation($"New list: \n{content}");
-            File.WriteAllText($"{UsersDirectoryInfo.FullName}/list.txt", content);
+            await File.WriteAllTextAsync($"{UsersDirectoryInfo.FullName}/list.txt", content);
             
             return true;
+        }
+
+
+        private static async Task UpdateAlbumAsync()
+        {
+            var files = File.ReadLines($"{UsersDirectoryInfo.FullName}/list.txt").ToList();
+            foreach (var fi in UsersDirectoryInfo.EnumerateFiles().Where(fi => fi.Name != "list.txt"))
+                fi.Delete();
+
+            foreach (var fn in files)
+            {
+                var url = $"{ServerUrl}/userdata/{DeviceId}/{fn}";
+                var request = FileWebRequest.Create(url);
+
+                logger.LogInformation($"Downloading: {url}");
+                var response = await request.GetResponseAsync();
+                var content = new StreamReader(response.GetResponseStream()).ReadToEnd();
+
+                var path = $"{UsersDirectoryInfo.FullName}/{fn}";
+                var fs = new StreamWriter(fn);
+                fs.Write(content);
+                fs.Close();
+            }
+
+            logger.LogInformation($"{files.Count} file(s) downloaded.");
         }
 
         static async Task Main(string[] args)
@@ -87,7 +114,13 @@ namespace album_client
             {
                 try
                 {
-                    logger.LogInformation($"{await UpdateListAsync()}");
+                    if (await UpdateListAsync())
+                    {
+                        logger.LogInformation("Start album reloading due to list updated.");
+                        await UpdateAlbumAsync();
+                    }
+
+                    await Task.Delay(2000);
 
                 } catch (WebException e)
                 {
