@@ -7,6 +7,8 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -46,6 +48,32 @@ namespace album_client
             }
         }
 
+        private static async Task<bool> UpdateListAsync()
+        {
+            var listRequest = WebRequest.Create($"{ServerUrl}/userdata/{DeviceId}.txt");
+            var listResult = await listRequest.GetResponseAsync();
+            var content = await new StreamReader(listResult.GetResponseStream()).ReadToEndAsync();
+
+            try
+            {
+                var hasher = SHA1.Create();
+                var newHash = hasher.ComputeHash(Encoding.Default.GetBytes(content));
+                var oldHash = hasher.ComputeHash(File.OpenRead($"{UsersDirectoryInfo.FullName}/list.txt"));
+                if (BitConverter.ToString(oldHash) == BitConverter.ToString(newHash))
+                {
+                    return false;
+                }
+            } catch (FileNotFoundException e)
+            {
+                logger.LogWarning($"Local list not found.");
+            }
+
+            logger.LogInformation($"New list: \n{content}");
+            File.WriteAllText($"{UsersDirectoryInfo.FullName}/list.txt", content);
+            
+            return true;
+        }
+
         static async Task Main(string[] args)
         {
             Debug.Assert(UsersDirectoryInfo.Exists);
@@ -54,10 +82,18 @@ namespace album_client
             logger.LogInformation($"Device ID: {DeviceId}");
             logger.LogInformation($"Your uploading page: {ServerUrl}/Upload?DeviceId={DeviceId}");
 
-            var listRequest = WebRequest.Create($"{ServerUrl}/userdata/{DeviceId}.txt") as HttpWebRequest;
-            var listResult = await listRequest.GetResponseAsync();
-            var content = listResult.ToString();
-            logger.LogInformation(content);
+
+            while (true)
+            {
+                try
+                {
+                    logger.LogInformation($"{await UpdateListAsync()}");
+
+                } catch (WebException e)
+                {
+                    logger.LogWarning(e.ToString());
+                }
+            }
         }
     }
 }
