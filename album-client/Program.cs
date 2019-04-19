@@ -1,5 +1,4 @@
 ﻿using System;
-
 using System.Configuration;
 using System.Diagnostics;
 using System.Globalization;
@@ -12,7 +11,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using System.Runtime.InteropServices;
 
 namespace album_client
 {
@@ -110,36 +108,8 @@ namespace album_client
             Logger.LogInformation($"Device ID: {DeviceId}");
             Logger.LogInformation($"Your uploading page: {ServerUrl}/Upload?DeviceId={DeviceId}");
 
-            var startInfo = new ProcessStartInfo {WorkingDirectory = $"{UsersDirectoryInfo.FullName}", };
-            var mpvArgs = $"--playlist=list.txt " +
-                       $"--image-display-duration={ResidenceTime} " +
-                       $"--fs ";
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && UseXinitInLinux)
-            {
-                mpvArgs += "--loop " + // TODO Check mpv version
-                           "--geometry=100%x100% ";
-                var findMpv = new Process { StartInfo = new ProcessStartInfo("which", "mpv") { RedirectStandardOutput = true, UseShellExecute = false } };
-                findMpv.Start();
-                findMpv.WaitForExit();
-                var mpvPath = findMpv.StandardOutput.ReadLine();
-                if (string.IsNullOrWhiteSpace(mpvPath))
-                {
-                    Logger.LogError("mpv not found in system, install it by \"apt install mpv\" (Debian).");
-                    throw new FileNotFoundException("mpv not found in system.");
-                }
-                startInfo.FileName = "xinit";
-                startInfo.Arguments = $"{mpvPath} {mpvArgs}";
-            }
-            else
-            {
-                mpvArgs += "--loop-playlist ";
-                startInfo.FileName = "mpv";
-                startInfo.Arguments = mpvArgs;
-            }
-            var projector = new Process {StartInfo = startInfo};
-            AppDomain.CurrentDomain.ProcessExit += (sender, eventArgs) => projector.Kill();
-            Console.CancelKeyPress += (sender, eventArgs) => projector.Kill();
+            var projector = new Projector();
+            Console.CancelKeyPress += (sender, eventArgs) => projector.Stop();
             projector.Start();
 
             while (true)
@@ -148,11 +118,7 @@ namespace album_client
                 {
                     if (await UpdateListAsync())
                     {
-                        if (!projector.HasExited)
-                        {
-                            projector.Kill();
-                        }
-                        projector.Close();
+                        projector.Stop();
 
                         Logger.LogInformation("Start album reloading due to list updated.");
                         await UpdateAlbumAsync();
