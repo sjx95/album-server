@@ -1,0 +1,89 @@
+﻿@page
+@model album_server.Pages.UploadModel
+@{
+    ViewData["Title"] = "Upload";
+}
+
+
+@if (Model.Request.HasFormContentType)
+{
+    Layout = null;
+    <h2>Upload Result</h2>
+    <p>
+        Device ID: @Model.DeviceId
+    </p>
+    <p>
+        Append Mode: @Model.AppendMode
+    </p>
+    <p>
+        Count of uploads: @Model.Pictures.Count
+    </p>
+    if (Model.ConflictSet.Count != 0)
+    {
+        <p>
+            Conflicts: @Model.ConflictSet.Count
+            @foreach (var fn in Model.ConflictSet)
+            {
+                <br/> @fn
+            }
+        </p>
+    }
+    <p>
+        Pictures: @Model.FileSet.Count
+        @foreach (var fn in Model.FileSet)
+        {
+            <br /> @fn
+        }
+    </p>
+}
+else
+{
+    <script>
+        function uploadFile() {
+            var xhr = new XMLHttpRequest();
+            var formData = new FormData();
+
+            var deviceId = document.getElementById("DeviceId");
+            formData.append(deviceId.name, deviceId.value);
+
+            var appendMode = document.getElementById("AppendMode");
+            formData.append(appendMode.name, appendMode.checked);
+
+            var pictures = document.getElementById("Pictures");
+            for (const file of pictures.files) {
+                formData.append(pictures.name, file);
+            }
+
+            xhr.open("POST", "/Upload");
+
+            xhr.onload = function () {
+                if (this.status === 200) {
+                    document.getElementById("Result").innerHTML = this.responseText;
+                } else {
+                    document.getElementById("Result").innerHTML = this.responseText;
+                }
+                document.getElementById("UploadBtn").disabled = false;
+            };
+
+            xhr.upload.onprogress = function (event) {
+                if (event.lengthComputable) {
+                    var progress = (event.loaded / event.total);
+                    document.getElementById("progress").value = progress;
+                }
+            };
+
+            xhr.send(formData);
+            document.getElementById("UploadBtn").disabled = true;
+        }
+    </script>
+
+    <h2>Upload Test Page</h2>
+    <form>
+        <input type="text" id="DeviceId" name="DeviceId" value="@Model.DeviceId" />
+        <input type="file" id="Pictures" name="Pictures" multiple />
+        <input type="checkbox" id="AppendMode" name="AppendMode" checked /> Append Mode <br />
+        <input type="button" id="UploadBtn" value="Upload" onclick="uploadFile()" />
+    </form>
+    <progress id="progress" value="0"></progress>
+    <div id="Result"></div>
+}
